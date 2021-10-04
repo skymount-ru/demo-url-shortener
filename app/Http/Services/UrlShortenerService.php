@@ -19,14 +19,7 @@ class UrlShortenerService
 
     public static function getUrlByShortCode(string $shortCode): string|null
     {
-        $entry = self::findByShortCode($shortCode);
-
-        if ($entry && !$entry->valid_until->diff(Carbon::now())->invert) {
-            $entry->delete();
-            $entry = null;
-        }
-
-        return $entry?->url;
+        return self::findByShortCode($shortCode)?->url;
     }
 
     /**
