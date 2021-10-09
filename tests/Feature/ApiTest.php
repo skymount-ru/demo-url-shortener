@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ApiTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_create_shorten_url()
     {
         $url = 'https://local.test/' . time();

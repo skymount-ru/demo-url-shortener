@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Services;
+namespace App\Services;
 
 use App\Exceptions\SafeBrowsingFailedException;
 use App\Exceptions\UrlExistsException;
@@ -16,29 +16,36 @@ class UrlShortenerService
 {
     private const SHORTCODE_REGEN_MAX_TRIES = 10;
     private const DB_EXCEPTION_SAYS_URL_EXISTS = 'url_entries_url_short_hash_url_hash_unique';
+    private SafeBrowsing $safeBrowsing;
 
-    public static function getUrlByShortCode(string $shortCode): string|null
+    public function __construct(SafeBrowsing $safeBrowsing)
     {
-        return self::findByShortCode($shortCode)?->url;
+        $this->safeBrowsing = $safeBrowsing;
+    }
+
+    public function getUrlByShortCode(string $shortCode): string|null
+    {
+        return $this->findByShortCode($shortCode)?->url;
     }
 
     /**
      * @throws UrlExistsException|RuntimeException|SafeBrowsingFailedException
      */
-    public static function createNewShort(string $url): UrlEntry
+    public function createNewShort(string $url): UrlEntry
     {
         /** @var UrlEntry|null $urlEntry */
-        $urlEntry = self::findByUrl($url);
+        $urlEntry = $this->findByUrl($url);
 
         if ($urlEntry) {
             throw new UrlExistsException($urlEntry);
         }
 
-        SafeBrowsing::validateUrl($url);
+        $urlHash = $this->calculateUrlHash($url);
 
-        return DB::transaction(function () use ($url) {
+        $this->safeBrowsing->validateUrl(new SafeBrowserUrl($url, $urlHash['full']));
 
-            $urlHash = self::calculateUrlHash($url);
+        return DB::transaction(function () use ($url, $urlHash) {
+
             $urlEntry = new UrlEntry();
             $urlEntry->url = $url;
             $urlEntry->url_hash = $urlHash['full'];
@@ -47,7 +54,7 @@ class UrlShortenerService
 
             $shortCodeRegenTry = 0;
             do {
-                $urlEntry->short_code = self::makeShortCode($url, 6);
+                $urlEntry->short_code = $this->makeShortCode($url, 6);
                 try {
                     if ($urlEntry->save()) {
                         return $urlEntry;
@@ -68,9 +75,9 @@ class UrlShortenerService
         });
     }
 
-    private static function findByUrl(string $url): ?UrlEntry
+    private function findByUrl(string $url): ?UrlEntry
     {
-        $urlHash = self::calculateUrlHash($url);
+        $urlHash = $this->calculateUrlHash($url);
 
         /** @var UrlEntry|null $entry */
         $entry = UrlEntry::query()
@@ -81,22 +88,7 @@ class UrlShortenerService
         return $entry;
     }
 
-    private static function makeShortCode(string $url, int $codeLength = 10): string
-    {
-        $md5UrlHashPart = substr(md5(uniqid($url, true)), 0, $codeLength);
-        return substr((new Base62)->encode($md5UrlHashPart), 0, $codeLength);
-    }
-
-    #[ArrayShape(['short' => "int", 'full' => "string"])]
-    public static function calculateUrlHash(string $url): array
-    {
-        return [
-            'short' => crc32($url),
-            'full' => hash('sha256', $url) ?: md5($url),
-        ];
-    }
-
-    private static function findByShortCode(string $shortCode): ?UrlEntry
+    private function findByShortCode(string $shortCode): ?UrlEntry
     {
         /** @var UrlEntry|null $entry */
         $entry = UrlEntry::query()
@@ -104,5 +96,20 @@ class UrlShortenerService
             ->first();
 
         return $entry;
+    }
+
+    public function makeShortCode(string $url, int $codeLength = 10): string
+    {
+        $md5UrlHashPart = substr(md5(uniqid($url, true)), 0, $codeLength);
+        return substr((new Base62)->encode($md5UrlHashPart), 0, $codeLength);
+    }
+
+    #[ArrayShape(['short' => "int", 'full' => "string"])]
+    public function calculateUrlHash(string $url): array
+    {
+        return [
+            'short' => crc32($url),
+            'full' => hash('sha256', $url) ?: md5($url),
+        ];
     }
 }

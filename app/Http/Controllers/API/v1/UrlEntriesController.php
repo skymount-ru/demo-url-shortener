@@ -4,7 +4,7 @@ namespace App\Http\Controllers\API\v1;
 
 use App\Exceptions\UrlExistsException;
 use App\Http\Controllers\Controller;
-use App\Http\Services\UrlShortenerService;
+use App\Services\UrlShortenerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -12,7 +12,7 @@ use Illuminate\Validation\ValidationException;
 
 class UrlEntriesController extends Controller
 {
-    public function store(Request $request): JsonResponse
+    public function store(UrlShortenerService $urlShortenerService, Request $request): JsonResponse
     {
         try {
             $validated = Validator::make($request->post(), [
@@ -21,7 +21,7 @@ class UrlEntriesController extends Controller
                 'url' => 'URL',
             ])->validate();
 
-            $urlEntry = UrlShortenerService::createNewShort($validated['url']);
+            $urlEntry = $urlShortenerService->createNewShort($validated['url']);
 
             $respData = [
                 'code' => 200,

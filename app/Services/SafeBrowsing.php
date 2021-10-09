@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Services;
+namespace App\Services;
 
 use App\AppDefaults;
 use App\Exceptions\SafeBrowsingFailedException;
@@ -12,40 +12,34 @@ class SafeBrowsing
 {
     private const GOOGLE_SAFE_BROWSING_URL = 'https://safebrowsing.googleapis.com/v4/threatMatches:find?key=%s';
 
+    /**
+     * @var array|SafeBrowserUrl[]
+     */
     private array $urls = [];
     private array $requestBody = [];
 
     /**
-     * @param string $url
+     * @param SafeBrowserUrl $url
      * @throws SafeBrowsingFailedException
      */
-    public static function validateUrl(string $url): void
+    public function validateUrl(SafeBrowserUrl $url): void
     {
-        $handler = new self();
-        $handler->addUrl($url);
-        $handler->validate();
+        $this->addUrl($url);
+        $this->validate();
     }
 
     /**
-     * @throws SafeBrowsingFailedException
+     * @param SafeBrowserUrl $safeBrowserUrl
      */
-    private function addUrl(string $url): void
+    private function addUrl(SafeBrowserUrl $safeBrowserUrl): void
     {
-        if (empty($url)) {
-            return;
-        }
-
-        if (str_contains($url, '#')) {
-            [$url, $_] = explode('#', $url, 2);
-        }
-
-        DB::transaction(function () use ($url) {
-            if (UnsafeUrl::query()->where('url_hash', UrlShortenerService::calculateUrlHash($url)['full'])->exists()) {
+        DB::transaction(function () use ($safeBrowserUrl) {
+            if (UnsafeUrl::query()->where('url_hash', $safeBrowserUrl->urlHash)->exists()) {
                 throw new SafeBrowsingFailedException('The URL is not safe (cached).');
             }
         }, AppDefaults::DB_TRANSACTION_RETRIES);
 
-        $this->urls[] = $url;
+        $this->urls[$safeBrowserUrl->urlHash] = $safeBrowserUrl->url;
     }
 
     /**
@@ -77,10 +71,11 @@ class SafeBrowsing
             DB::transaction(function () use ($response) {
                 foreach ($response->json('matches', []) as $urlMatch) {
                     $url = $urlMatch['threat']['url'] ?? null;
-                    if (!$url) { continue; }
-                    UnsafeUrl::create([
-                        'url_hash' => UrlShortenerService::calculateUrlHash($url)['full'],
-                    ]);
+                    if (empty($url)) { continue; }
+                    $hash = array_search($url, $this->urls, true);
+                    if ($hash) {
+                        UnsafeUrl::create(['url_hash' => $hash]);
+                    }
                 }
             }, AppDefaults::DB_TRANSACTION_RETRIES);
 
@@ -99,9 +94,9 @@ class SafeBrowsing
                 'threatTypes' => ['MALWARE', 'SOCIAL_ENGINEERING', 'POTENTIALLY_HARMFUL_APPLICATION'],
                 'platformTypes' => ['ANY_PLATFORM'],
                 'threatEntryTypes' => ['URL'],
-                'threatEntries' => array_map(static function ($el) {
+                'threatEntries' => array_values(array_map(static function (string $el) {
                     return ['url' => $el];
-                }, $this->urls),
+                }, $this->urls)),
             ],
         ];
     }

@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Services\UrlShortenerService;
+use App\Services\UrlShortenerService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -13,10 +13,10 @@ class RedirectByHashAction extends Controller
 {
     private const AUTO_DELETE_MAX_LIMIT = 500;
 
-    public function __invoke(string $shortCode): RedirectResponse
+    public function __invoke(UrlShortenerService $urlShortenerService, string $shortCode): RedirectResponse
     {
-        $redirectUrl = Cache::remember($shortCode, new \DateInterval('P1D'), function () use ($shortCode) {
-            return UrlShortenerService::getUrlByShortCode($shortCode);
+        $redirectUrl = Cache::remember($shortCode, new \DateInterval('P1D'), function () use ($urlShortenerService, $shortCode) {
+            return $urlShortenerService->getUrlByShortCode($shortCode);
         });
 
         if (empty($redirectUrl)) {
@@ -33,7 +33,7 @@ class RedirectByHashAction extends Controller
      */
     private function makeCleanUp(): void
     {
-        if (rand(0, 100) > 2) {
+        if (random_int(0, 100) > 2) {
             return;
         }
 
